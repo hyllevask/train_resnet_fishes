@@ -123,12 +123,21 @@ rescale = Rescale((256,512))
 
 device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
 
-
+train_csv_path = "/home/johan/Documents/Projekt/FiDiMo/Vattenfall-fish-open-data/Vattenfall-fish-open-data/combined_dataset/train.csv"
+validation_csv_path = "/home/johan/Documents/Projekt/FiDiMo/Vattenfall-fish-open-data/Vattenfall-fish-open-data/combined_dataset/validation.csv"
+test_csv_path = "/home/johan/Documents/Projekt/FiDiMo/Vattenfall-fish-open-data/Vattenfall-fish-open-data/combined_dataset/test.csv"
+image_root = "/home/johan/Documents/Projekt/FiDiMo/Vattenfall-fish-open-data/Vattenfall-fish-open-data/combined_dataset/combined_images"
 
 totensor = ToTensor()
 tfs = transforms.Compose([rescale,totensor])
-trainset = FishFinDataset('annotations.csv','./fin_images',transform=tfs)
+trainset = FishFinDataset(train_csv_path, image_root ,transform=tfs)
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,shuffle=True, num_workers=1)
+
+validationset = FishFinDataset(validation_csv_path, image_root ,transform=tfs)
+validationloaderloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,shuffle=True, num_workers=1)
+
+testset = FishFinDataset(test_csv_path, image_root ,transform=tfs)
+validationloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,shuffle=True, num_workers=1)
 
 classes = ('Wild', 'Farmed', 'Unknown')
 
@@ -137,6 +146,11 @@ net = torchvision.models.resnet18(pretrained=False)
 net.fc= nn.Linear(512, 3)         #Labeling has fin/no fin/unsure
 net.float()
 net.to(device)
+
+#Drop the last adaptive pooling and fc layer
+backbone = torch.nn.Sequential(*(list(net.children())[:-2]))
+head1 = torch.nn.Sequential(*(list(net.children())[-2:])))
+head2 = torch.nn.Sequential(*(list(net.children())[-2:])))
 import torch.optim as optim
 
 criterion = nn.CrossEntropyLoss()
@@ -150,7 +164,9 @@ for epoch in range(epochs):
         image = data['image']
         label = data['label']
         optimizer.zero_grad()
-        output = net(image.float())
+        conv_output = net(image.float())
+        out1 = head1(conv_output)
+        out2 = head1(conv_output)
         loss = criterion(output,label.squeeze())
         loss.backward()
         optimizer.step()
