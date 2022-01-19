@@ -37,12 +37,14 @@ class FishFinDataset(Dataset):
             idx = idx.tolist()
 
         img_name = os.path.join(self.root_dir,
-                                self.fish_frame.iloc[idx, 1])
+                                self.fish_frame.iloc[idx, 0])
         image = io.imread(img_name)
-        lable = self.fish_frame.iloc[idx, 2]
-        covert_strings = {'Has_fin':0, 'No_fin':1, 'Cannot_see':2}
+        label = self.fish_frame.iloc[idx, 1]
+        label2 = self.fish_frame[idx,2]
+        convert_strings = {'Has_fin':0, 'No_fin':1, 'Cannot_see':2}
+        convert_strings2 = {'No Fungi': 0, 'Slight Fungi':1, 'Severe Fungi':2}
 
-        sample = {'image': image, 'lable': np.array([covert_strings[lable]])}
+        sample = {'image': image, 'label': np.array([convert_strings[label]]), 'label2': np.array([convert_strings2[label2]])}
 
         if self.transform:
             sample = self.transform(sample)
@@ -53,15 +55,15 @@ class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
 
     def __call__(self, sample):
-        image, lable = sample['image'], sample['lable']
+        image, label = sample['image'], sample['label']
 
         # swap color axis because
         # numpy image: H x W x C
         # torch image: C x H x W
         image = image.transpose((2, 0, 1))
-        lable = lable.reshape((-1,))
+        label = label.reshape((-1,))
         return {'image': torch.from_numpy(image),
-                'lable': torch.from_numpy(lable)}
+                'label': torch.from_numpy(label)}
 
 
 class Rescale(object):
@@ -78,7 +80,7 @@ class Rescale(object):
         self.output_size = output_size
 
     def __call__(self, sample):
-        image, lable = sample['image'], sample['lable']
+        image, label = sample['image'], sample['label']
 
         h, w = image.shape[:2]
         if isinstance(self.output_size, int):
@@ -97,7 +99,7 @@ class Rescale(object):
         # x and y axes are axis 1 and 0 respectively
         
 
-        return {'image': img, 'lable': lable}
+        return {'image': img, 'label': label}
 
 
 
@@ -110,7 +112,7 @@ class Rescale(object):
 
 def my_collate(batch):
     data = [item['image'] for item in batch]
-    target = [item['lable'] for item in batch]
+    target = [item['label'] for item in batch]
     target = torch.LongTensor(target)
     return [data, target]
 
@@ -146,10 +148,10 @@ for epoch in range(epochs):
     running_loss = 0
     for i,data in enumerate(tqdm(trainloader)):
         image = data['image']
-        lable = data['lable']
+        label = data['label']
         optimizer.zero_grad()
         output = net(image.float())
-        loss = criterion(output,lable.squeeze())
+        loss = criterion(output,label.squeeze())
         loss.backward()
         optimizer.step()
         #print(data)
