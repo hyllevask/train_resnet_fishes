@@ -2,6 +2,7 @@
 
 from __future__ import print_function, division
 import os
+from turtle import forward
 import torch
 import pandas as pd
 from skimage import io, transform
@@ -40,7 +41,7 @@ class FishFinDataset(Dataset):
                                 self.fish_frame.iloc[idx, 0])
         image = io.imread(img_name)
         label = self.fish_frame.iloc[idx, 1]
-        label2 = self.fish_frame[idx,2]
+        label2 = self.fish_frame.iloc[idx,2]
         convert_strings = {'Has_fin':0, 'No_fin':1, 'Cannot_see':2}
         convert_strings2 = {'No Fungi': 0, 'Slight Fungi':1, 'Severe Fungi':2}
 
@@ -55,7 +56,7 @@ class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
 
     def __call__(self, sample):
-        image, label = sample['image'], sample['label']
+        image, label, label2 = sample['image'], sample['label'], sample['label2']
 
         # swap color axis because
         # numpy image: H x W x C
@@ -63,7 +64,8 @@ class ToTensor(object):
         image = image.transpose((2, 0, 1))
         label = label.reshape((-1,))
         return {'image': torch.from_numpy(image),
-                'label': torch.from_numpy(label)}
+                'label': torch.from_numpy(label),
+                'label2':torch.from_numpy(label2)}
 
 
 class Rescale(object):
@@ -80,7 +82,7 @@ class Rescale(object):
         self.output_size = output_size
 
     def __call__(self, sample):
-        image, label = sample['image'], sample['label']
+        image, label, label2 = sample['image'], sample['label'], sample['label2']
 
         h, w = image.shape[:2]
         if isinstance(self.output_size, int):
@@ -99,7 +101,40 @@ class Rescale(object):
         # x and y axes are axis 1 and 0 respectively
         
 
-        return {'image': img, 'label': label}
+        return {'image': img, 'label': label, 'label2': label2}
+
+
+class MultiHeadResNet(torch.nn.Module):
+    def __init__(self,net):
+        super().__init__()
+        self.conv1 = list(net.children())[0]
+        self.bn1 = list(net.children())[1]
+        self.relu = list(net.children())[2]
+        self.maxpool = list(net.children())[3]
+        self.layer1 = list(net.children())[4]
+        self.layer2 = list(net.children())[5]
+        self.layer3 = list(net.children())[6]
+        self.layer4 = list(net.children())[7]
+        self.avgpool = nn.AdaptiveAvgPool2d((1,1))
+        self.fc1 = nn.Linear(512,3)
+        self.fc2 = nn.Linear(512,3)
+
+    def forward(self,x):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        x1 = self.fc1(x)
+        x2 = self.fc2(x)
+        return x1,x2
 
 
 
@@ -143,18 +178,21 @@ classes = ('Wild', 'Farmed', 'Unknown')
 
 
 net = torchvision.models.resnet18(pretrained=False)
-net.fc= nn.Linear(512, 3)         #Labeling has fin/no fin/unsure
-net.float()
-net.to(device)
+
+myNet = MultiHeadResNet(net)
+
+#net.fc= nn.Linear(512, 3)         #Labeling has fin/no fin/unsure
+myNet.float()
+myNet.to(device)
 
 #Drop the last adaptive pooling and fc layer
-backbone = torch.nn.Sequential(*(list(net.children())[:-2]))
-head1 = torch.nn.Sequential(*(list(net.children())[-2:])))
-head2 = torch.nn.Sequential(*(list(net.children())[-2:])))
+#backbone = torch.nn.Sequential(*(list(net.children())[:-2]))
+#head1 = torch.nn.Sequential(*(list(net.children())[-2:]))
+#head2 = torch.nn.Sequential(*(list(net.children())[-2:]))
 import torch.optim as optim
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+optimizer = optim.SGD(myNet.parameters(), lr=0.001, momentum=0.9)
 
 
 
@@ -163,11 +201,13 @@ for epoch in range(epochs):
     for i,data in enumerate(tqdm(trainloader)):
         image = data['image']
         label = data['label']
+        label2 = data['label2']
         optimizer.zero_grad()
-        conv_output = net(image.float())
-        out1 = head1(conv_output)
-        out2 = head1(conv_output)
-        loss = criterion(output,label.squeeze())
+        out1,out2 = myNet(image.float())
+        
+        loss1 = criterion(out1,label.squeeze())
+        loss2 = criterion(out2,label2.squeeze())
+        loss = loss1+loss2
         loss.backward()
         optimizer.step()
         #print(data)
