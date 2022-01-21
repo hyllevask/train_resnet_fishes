@@ -169,10 +169,10 @@ trainset = FishFinDataset(train_csv_path, image_root ,transform=tfs)
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,shuffle=True, num_workers=1)
 
 validationset = FishFinDataset(validation_csv_path, image_root ,transform=tfs)
-validationloaderloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,shuffle=True, num_workers=1)
+validationloader = torch.utils.data.DataLoader(validationset, batch_size=batch_size,shuffle=True, num_workers=1)
 
 testset = FishFinDataset(test_csv_path, image_root ,transform=tfs)
-validationloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,shuffle=True, num_workers=1)
+testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,shuffle=True, num_workers=1)
 
 classes = ('Wild', 'Farmed', 'Unknown')
 
@@ -192,8 +192,13 @@ myNet.to(device)
 import torch.optim as optim
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(myNet.parameters(), lr=0.001, momentum=0.9)
+#optimizer = optim.SGD(myNet.parameters(), lr=0.001, momentum=0.9)
+optimizer = optim.Adam(myNet.parameters(),lr = 0.01)
 
+from torch.utils.tensorboard import SummaryWriter
+
+writer = SummaryWriter("runs")
+n_total_steps = len(trainloader)
 
 
 for epoch in range(epochs):
@@ -211,3 +216,27 @@ for epoch in range(epochs):
         loss.backward()
         optimizer.step()
         #print(data)
+        if (i+1) % 100 == 0:
+            writer.add_scalar('training loss', running_loss / 100, epoch*n_total_steps + i)
+            running_loss = 0.0
+    
+    torch.save(myNet.state_dict(), "./saved_epoch_run2_" + str(epoch)+".pt")
+    validation_total = 0
+    validation1 = 0
+    validation2 = 0
+    #Run inference on validation set
+    for j,data in enumerate(tqdm(validationloader)):
+        image = data['image']
+        label = data['label']
+        label2 = data['label2']
+
+        out1,out2 = myNet(image.float())
+        
+        loss1 = criterion(out1,label.squeeze())
+        loss2 = criterion(out2,label2.squeeze())
+        loss = loss1+loss2
+
+    writer.add_scalar('training loss', running_loss / 1000, epoch)
+        
+        
+
