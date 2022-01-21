@@ -152,8 +152,8 @@ def my_collate(batch):
     return [data, target]
 
 #####################################
-epochs = 3
-batch_size = 2
+epochs = 50
+batch_size = 32
 rescale = Rescale((256,512))
 
 device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
@@ -219,7 +219,6 @@ for epoch in range(epochs):
         if (i+1) % 100 == 0:
             writer.add_scalar('training loss', running_loss / 100, epoch*n_total_steps + i)
             running_loss = 0.0
-    
     torch.save(myNet.state_dict(), "./saved_epoch_run2_" + str(epoch)+".pt")
     validation_total = 0
     validation1 = 0
@@ -236,7 +235,13 @@ for epoch in range(epochs):
         loss2 = criterion(out2,label2.squeeze())
         loss = loss1+loss2
 
-    writer.add_scalar('training loss', running_loss / 1000, epoch)
+        validation_total += loss.item()
+        validation1 += loss1.item()
+        validation2 += loss2.item()
+
+    writer.add_scalar('Validation loss', validation_total / 1000, epoch)
+    writer.add_scalar('Validation1 loss', validation1 / 1000, epoch)
+    writer.add_scalar('Validation2 loss', validation2 / 1000, epoch)
         
         
 
