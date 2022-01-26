@@ -1,11 +1,19 @@
+from torch.utils.data import Dataset
+import torch
+import pandas as pd
+
+import os
+from skimage import io, transform
+import numpy as np
+
 class FishFinDataset(Dataset):
     """Face Landmarks dataset."""
 
     def __init__(self, csv_file, root_dir, transform=None):
         """
         Args:
-            csv_file (string): Path to the csv file with annotations.
-            root_dir (string): Directory with all the images.
+            csv_file (): Path to the csv file with annotations.
+            roostringt_dir (string): Directory with all the images.
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """

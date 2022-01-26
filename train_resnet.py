@@ -17,7 +17,7 @@ from tqdm import tqdm
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 import datetime
-from os import
+import os
 
 #Import the user defined functions from the helper file.
 from net_and_functions import FishFinDataset, ToTensor, Rescale, MultiHeadResNet
@@ -112,7 +112,8 @@ def main(mode):
             if (i+1) % 100 == 0:
                 writer.add_scalar('training loss', running_loss / 100, epoch*n_total_steps + i)
                 running_loss = 0.0
-        torch.save(myNet.state_dict(), results_folder + "/epoch_" + str(epoch)+".pt")
+                
+        torch.save(myNet.state_dict(), "./results/" + results_folder + "/epoch_" + str(epoch)+".pt")
         validation_total = 0
         validation1 = 0
         validation2 = 0
@@ -181,14 +182,16 @@ def main(mode):
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Train script for the first fish dataset")
-    parser.add_argument('--mode',type=str,required=True)
-    args = parser.parse_args()
-
+   # parser = argparse.ArgumentParser(description="Train script for the first fish dataset")
+    #parser.add_argument('--mode',type=str,required=True)
+    
+   # args = parser.parse_args()
+    #mode = args.mode
+    mode = "fin"
     allowed_modes = ["fin", "fungi","joint"]
 
-    if args.mode in allowed_modes:
-        main(args.mode)
+    if mode in allowed_modes:
+        main(mode)
     else:
         print("Mode not allowed! Please try again.")
     
