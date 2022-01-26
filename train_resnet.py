@@ -14,237 +14,183 @@ import torchvision
 import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
-
-class FishFinDataset(Dataset):
-    """Face Landmarks dataset."""
-
-    def __init__(self, csv_file, root_dir, transform=None):
-        """
-        Args:
-            csv_file (string): Path to the csv file with annotations.
-            root_dir (string): Directory with all the images.
-            transform (callable, optional): Optional transform to be applied
-                on a sample.
-        """
-        self.fish_frame = pd.read_csv(csv_file)
-        self.root_dir = root_dir
-        self.transform = transform
-
-    def __len__(self):
-        return len(self.fish_frame)
-
-    def __getitem__(self, idx):
-        if torch.is_tensor(idx):
-            idx = idx.tolist()
-
-        img_name = os.path.join(self.root_dir,
-                                self.fish_frame.iloc[idx, 0])
-        image = io.imread(img_name)
-        label = self.fish_frame.iloc[idx, 1]
-        label2 = self.fish_frame.iloc[idx,2]
-        convert_strings = {'Has_fin':0, 'No_fin':1, 'Cannot_see':2}
-        convert_strings2 = {'No Fungi': 0, 'Slight Fungi':1, 'Severe Fungi':2}
-
-        sample = {'image': image, 'label': np.array([convert_strings[label]]), 'label2': np.array([convert_strings2[label2]])}
-
-        if self.transform:
-            sample = self.transform(sample)
-
-        return sample
-
-class ToTensor(object):
-    """Convert ndarrays in sample to Tensors."""
-
-    def __call__(self, sample):
-        image, label, label2 = sample['image'], sample['label'], sample['label2']
-
-        # swap color axis because
-        # numpy image: H x W x C
-        # torch image: C x H x W
-        image = image.transpose((2, 0, 1))
-        label = label.reshape((-1,))
-        return {'image': torch.from_numpy(image),
-                'label': torch.from_numpy(label),
-                'label2':torch.from_numpy(label2)}
-
-
-class Rescale(object):
-    """Rescale the image in a sample to a given size.
-
-    Args:
-        output_size (tuple or int): Desired output size. If tuple, output is
-            matched to output_size. If int, smaller of image edges is matched
-            to output_size keeping aspect ratio the same.
-    """
-
-    def __init__(self, output_size):
-        assert isinstance(output_size, (int, tuple))
-        self.output_size = output_size
-
-    def __call__(self, sample):
-        image, label, label2 = sample['image'], sample['label'], sample['label2']
-
-        h, w = image.shape[:2]
-        if isinstance(self.output_size, int):
-            if h > w:
-                new_h, new_w = self.output_size * h / w, self.output_size
-            else:
-                new_h, new_w = self.output_size, self.output_size * w / h
-        else:
-            new_h, new_w = self.output_size
-
-        new_h, new_w = int(new_h), int(new_w)
-
-        img = transform.resize(image, (new_h, new_w))
-
-        # h and w are swapped for landmarks because for images,
-        # x and y axes are axis 1 and 0 respectively
-        
-
-        return {'image': img, 'label': label, 'label2': label2}
-
-
-class MultiHeadResNet(torch.nn.Module):
-    def __init__(self,net):
-        super().__init__()
-        self.conv1 = list(net.children())[0]
-        self.bn1 = list(net.children())[1]
-        self.relu = list(net.children())[2]
-        self.maxpool = list(net.children())[3]
-        self.layer1 = list(net.children())[4]
-        self.layer2 = list(net.children())[5]
-        self.layer3 = list(net.children())[6]
-        self.layer4 = list(net.children())[7]
-        self.avgpool = nn.AdaptiveAvgPool2d((1,1))
-        self.fc1 = nn.Linear(512,3)
-        self.fc2 = nn.Linear(512,3)
-
-    def forward(self,x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.maxpool(x)
-
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-
-        x = self.avgpool(x)
-        x = torch.flatten(x, 1)
-        x1 = self.fc1(x)
-        x2 = self.fc2(x)
-        return x1,x2
-
-
-
-#####################################
-
-#KOLLA IGENOM CUSTOMKLASSEN 
-
-
-#####################################
-
-def my_collate(batch):
-    data = [item['image'] for item in batch]
-    target = [item['label'] for item in batch]
-    target = torch.LongTensor(target)
-    return [data, target]
-
-#####################################
-epochs = 25
-batch_size = 32
-rescale = Rescale((256,512))
-
-device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
-
-train_csv_path = "./combined_dataset/train.csv"
-validation_csv_path = "./combined_dataset/validation.csv"
-test_csv_path = "./combined_dataset/test.csv"
-image_root = "./combined_dataset/combined_images"
-
-totensor = ToTensor()
-tfs = transforms.Compose([rescale,totensor])
-trainset = FishFinDataset(train_csv_path, image_root ,transform=tfs)
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,shuffle=True, num_workers=1)
-
-validationset = FishFinDataset(validation_csv_path, image_root ,transform=tfs)
-validationloader = torch.utils.data.DataLoader(validationset, batch_size=batch_size,shuffle=True, num_workers=1)
-
-testset = FishFinDataset(test_csv_path, image_root ,transform=tfs)
-testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,shuffle=True, num_workers=1)
-
-classes = ('Wild', 'Farmed', 'Unknown')
-
-
-net = torchvision.models.resnet18(pretrained=False)
-
-myNet = MultiHeadResNet(net)
-
-#net.fc= nn.Linear(512, 3)         #Labeling has fin/no fin/unsure
-myNet.float()
-myNet.to(device)
-
-#Drop the last adaptive pooling and fc layer
-#backbone = torch.nn.Sequential(*(list(net.children())[:-2]))
-#head1 = torch.nn.Sequential(*(list(net.children())[-2:]))
-#head2 = torch.nn.Sequential(*(list(net.children())[-2:]))
 import torch.optim as optim
-
-criterion = nn.CrossEntropyLoss()
-#optimizer = optim.SGD(myNet.parameters(), lr=0.001, momentum=0.9)
-optimizer = optim.Adam(myNet.parameters(),lr = 0.01)
-
 from torch.utils.tensorboard import SummaryWriter
+import datetime
+from os import
 
-writer = SummaryWriter("runs")
-n_total_steps = len(trainloader)
+#Import the user defined functions from the helper file.
+from net_and_functions import FishFinDataset, ToTensor, Rescale, MultiHeadResNet
 
 
-for epoch in range(epochs):
-    running_loss = 0
-    for i,data in enumerate(tqdm(trainloader)):
-        image = data['image']
-        label = data['label']
-        label2 = data['label2']
-        optimizer.zero_grad()
-        out1,out2 = myNet(image.float().to(device))
-        
-        loss1 = criterion(out1,label.squeeze().to(device))
-        loss2 = criterion(out2,label2.squeeze().to(device))
-        loss = loss1+loss2
+#####################################
 
-        running_loss += loss.item()
+def main(mode):
 
-        loss.backward()
-        optimizer.step()
-        #print(data)
-        if (i+1) % 100 == 0:
-            writer.add_scalar('training loss', running_loss / 100, epoch*n_total_steps + i)
-            running_loss = 0.0
-    torch.save(myNet.state_dict(), "./saved_epoch_run2_" + str(epoch)+".pt")
-    validation_total = 0
-    validation1 = 0
-    validation2 = 0
-    #Run inference on validation set
-    for j,data in enumerate(tqdm(validationloader)):
-        image = data['image']
-        label = data['label']
-        label2 = data['label2']
+    results_folder = datetime.datetime.now().strftime("%Y-%m-%d %X") + " Mode:"+mode
+    os.mkdir(os.path.join("./results", results_folder))
+    epochs = 25
+    batch_size = 32
+    rescale = Rescale((256,512))
+    totensor = ToTensor()
+    tfs = transforms.Compose([rescale,totensor])
 
-        out1,out2 = myNet(image.float().to(device))
-        
-        loss1 = criterion(out1,label.squeeze().to(device))
-        loss2 = criterion(out2,label2.squeeze().to(device))
-        loss = loss1+loss2
+    #CHeck if we are on the gpu-tower
+    device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
 
-        validation_total += loss.item()
-        validation1 += loss1.item()
-        validation2 += loss2.item()
+    train_csv_path = "./combined_dataset/train.csv"
+    validation_csv_path = "./combined_dataset/validation.csv"
+    #test_csv_path = "./combined_dataset/test.csv"  Dont need test here!
+    image_root = "./combined_dataset/combined_images"
 
-    writer.add_scalar('Validation loss', validation_total / 1000, epoch)
-    writer.add_scalar('Validation1 loss', validation1 / 1000, epoch)
-    writer.add_scalar('Validation2 loss', validation2 / 1000, epoch)
-        
+    
+    
+    trainset = FishFinDataset(train_csv_path, image_root ,transform=tfs)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,shuffle=True, num_workers=1)
+
+    validationset = FishFinDataset(validation_csv_path, image_root ,transform=tfs)
+    validationloader = torch.utils.data.DataLoader(validationset, batch_size=batch_size,shuffle=True, num_workers=1)
+
+
+    #Dont need test here
+    #testset = FishFinDataset(test_csv_path, image_root ,transform=tfs)
+    #testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,shuffle=True, num_workers=1)
+
+    classes = ('Wild', 'Farmed', 'Unknown')
+
+
+    net = torchvision.models.resnet18(pretrained=False)
+
+    if mode == "joint":
+        myNet = MultiHeadResNet(net)
+    else:
+        net.fc= nn.Linear(512, 3) #Labeling has fin/no fin/unsure
+        myNet = net 
+
+ 
+    myNet.float()
+    myNet.to(device)
+
+    
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(myNet.parameters(),lr = 0.01)
+
+    
+
+    writer = SummaryWriter(os.path.join("./results", results_folder))
+    n_total_steps = len(trainloader)
+
+    #Main training loop
+    for epoch in range(epochs):
+        running_loss = 0
+        for i,data in enumerate(tqdm(trainloader)):
+            
+            image = data['image']
+            label = data['label']
+            label2 = data['label2']
+            optimizer.zero_grad()
+
+            if mode == "joint":
+                out1,out2 = myNet(image.float().to(device))
+            
+                loss1 = criterion(out1,label.squeeze().to(device))
+                loss2 = criterion(out2,label2.squeeze().to(device))
+                loss = loss1+loss2
+            elif mode == "fin":
+                out = myNet(image.float().to(device))
+                loss = criterion(out,label.squeeze().to(device))
+            elif mode == "fungi":
+                out = myNet(image.float().to(device))
+                loss = criterion(out,label2.squeeze().to(device))
+
+            running_loss += loss.item()
+
+            loss.backward()
+            optimizer.step()
+            #print(data)
+            if (i+1) % 100 == 0:
+                writer.add_scalar('training loss', running_loss / 100, epoch*n_total_steps + i)
+                running_loss = 0.0
+        torch.save(myNet.state_dict(), results_folder + "/epoch_" + str(epoch)+".pt")
+        validation_total = 0
+        validation1 = 0
+        validation2 = 0
+
+        correct2 = 0
+        correct1 = 0
+        total1 = 0
+        total2 = 0
+        total = 0
+        correct = 0
+        #Run inference on validation set
+        for j,data in enumerate(tqdm(validationloader)):
+            image = data['image']
+            label = data['label']
+            label2 = data['label2']
+            if mode == "joint":
+
+                out1,out2 = myNet(image.float().to(device))
+            
+                loss1 = criterion(out1,label.squeeze().to(device))
+                loss2 = criterion(out2,label2.squeeze().to(device))
+                loss = loss1+loss2
+                validation1 += loss1.item()
+                validation2 += loss2.item()
+
+                total1 +=  len(label)
+                correct1 += (torch.argmax(out1,axis=1) == label.to(device).squeeze()).sum().item() 
+                correct2 += (torch.argmax(out2,axis=1) == label2.to(device).squeeze()).sum().item()
+                total2 += len(label2)
+            elif mode == "fin":
+                out = myNet(image.float().to(device))
+                loss = criterion(out,label.squeeze().to(device))
+                total +=  len(label)
+                correct += (torch.argmax(out,axis=1) == label.to(device).squeeze()).sum().item()
+            elif mode == "fungi":
+                out = myNet(image.float().to(device))
+                loss = criterion(out,label2.squeeze().to(device))
+
+                total +=  len(label)
+                correct += (torch.argmax(out,axis=1) == label2.to(device).squeeze()).sum().item()
+            
+            validation_total += loss.item()
+            
+            
+
+
+        writer.add_scalar('Validation loss/Total', validation_total / 1000, epoch)
+        if mode == "joint":
+            writer.add_scalar('Validation loss/Label1', validation1 / 1000, epoch)
+            writer.add_scalar('Validation loss/Label2', validation2 / 1000, epoch)
+            writer.add_scalar('Validation Accuracy/Label1',correct1/total1, epoch)
+            writer.add_scalar('Validation Accuracy/Label2',correct2/total2, epoch)
+        else:
+            writer.add_scalar('Validation Loss', validation_total / 1000, epoch)
+            writer.add_scalar('Validation Accuracy', correct/total, epoch)
+
+
+
+
+
+
+
+
+
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Train script for the first fish dataset")
+    parser.add_argument('--mode',type=str,required=True)
+    args = parser.parse_args()
+
+    allowed_modes = ["fin", "fungi","joint"]
+
+    if args.mode in allowed_modes:
+        main(args.mode)
+    else:
+        print("Mode not allowed! Please try again.")
+    
         
 
