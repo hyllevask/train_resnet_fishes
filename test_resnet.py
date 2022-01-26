@@ -178,73 +178,51 @@ classes = ('Wild', 'Farmed', 'Unknown')
 
 
 net = torchvision.models.resnet18(pretrained=False)
-
 myNet = MultiHeadResNet(net)
+for ep in range(0,25,2):
+    print("Epoch" + str(ep))
+    parameters_path = "./saved_epoch_run2_" +str(ep)+ ".pt"
 
-#net.fc= nn.Linear(512, 3)         #Labeling has fin/no fin/unsure
-myNet.float()
-myNet.to(device)
+    #net.fc= nn.Linear(512, 3)         #Labeling has fin/no fin/unsure
+    myNet.float()
+    myNet.to(device)
+    myNet.eval()
 
-#Drop the last adaptive pooling and fc layer
-#backbone = torch.nn.Sequential(*(list(net.children())[:-2]))
-#head1 = torch.nn.Sequential(*(list(net.children())[-2:]))
-#head2 = torch.nn.Sequential(*(list(net.children())[-2:]))
-import torch.optim as optim
+    myNet.load_state_dict(torch.load(parameters_path))
 
-criterion = nn.CrossEntropyLoss()
-#optimizer = optim.SGD(myNet.parameters(), lr=0.001, momentum=0.9)
-optimizer = optim.Adam(myNet.parameters(),lr = 0.01)
+    #Drop the last adaptive pooling and fc layer
+    #backbone = torch.nn.Sequential(*(list(net.children())[:-2]))
+    #head1 = torch.nn.Sequential(*(list(net.children())[-2:]))
+    #head2 = torch.nn.Sequential(*(list(net.children())[-2:]))
+    import torch.optim as optim
 
-from torch.utils.tensorboard import SummaryWriter
+    from torch.utils.tensorboard import SummaryWriter
 
-writer = SummaryWriter("runs")
-n_total_steps = len(trainloader)
+    #writer = SummaryWriter("runs")
+    n_total_steps = len(trainloader)
+
+    def eval_accu(data,label):
+        data = torch.argmax(data)
 
 
-for epoch in range(epochs):
-    running_loss = 0
-    for i,data in enumerate(tqdm(trainloader)):
+    correct2 = 0
+    correct1 = 0
+    total1 = 0
+    total2 = 0
+
+
+    for i,data in enumerate(tqdm(validationloader)):
         image = data['image']
         label = data['label']
         label2 = data['label2']
-        optimizer.zero_grad()
         out1,out2 = myNet(image.float().to(device))
-        
-        loss1 = criterion(out1,label.squeeze().to(device))
-        loss2 = criterion(out2,label2.squeeze().to(device))
-        loss = loss1+loss2
 
-        running_loss += loss.item()
+        correct2 += (torch.argmax(out2,axis=1) == label2.to(device).squeeze()).sum().item()
+        total2 += len(label2)
 
-        loss.backward()
-        optimizer.step()
-        #print(data)
-        if (i+1) % 100 == 0:
-            writer.add_scalar('training loss', running_loss / 100, epoch*n_total_steps + i)
-            running_loss = 0.0
-    torch.save(myNet.state_dict(), "./saved_epoch_run2_" + str(epoch)+".pt")
-    validation_total = 0
-    validation1 = 0
-    validation2 = 0
-    #Run inference on validation set
-    for j,data in enumerate(tqdm(validationloader)):
-        image = data['image']
-        label = data['label']
-        label2 = data['label2']
 
-        out1,out2 = myNet(image.float().to(device))
-        
-        loss1 = criterion(out1,label.squeeze().to(device))
-        loss2 = criterion(out2,label2.squeeze().to(device))
-        loss = loss1+loss2
+        total1 +=  len(label)
+        correct1 += (torch.argmax(out1,axis=1) == label.to(device).squeeze()).sum().item() 
 
-        validation_total += loss.item()
-        validation1 += loss1.item()
-        validation2 += loss2.item()
-
-    writer.add_scalar('Validation loss', validation_total / 1000, epoch)
-    writer.add_scalar('Validation1 loss', validation1 / 1000, epoch)
-    writer.add_scalar('Validation2 loss', validation2 / 1000, epoch)
-        
-        
-
+    print(correct1/total1)
+    print(correct2/total2)
