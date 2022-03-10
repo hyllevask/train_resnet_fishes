@@ -31,12 +31,24 @@ class FishFinDataset(Dataset):
         img_name = os.path.join(self.root_dir,
                                 self.fish_frame.iloc[idx, 0])
         image = io.imread(img_name)
-        label = self.fish_frame.iloc[idx, 1]
-        label2 = self.fish_frame.iloc[idx,2]
-        convert_strings = {'Has_fin':0, 'No_fin':1, 'Cannot_see':2}
-        convert_strings2 = {'No Fungi': 0, 'Slight Fungi':1, 'Severe Fungi':2}
+        combined_label = self.fish_frame.iloc[idx, 1]		#Scale to 0-3
+        if combined_label == 1:
+            label = 0
+            label2 = 0
+        elif combined_label == 2:
+            label = 1
+            label2 = 0
+        elif combined_label == 3:
+            label = 0
+            label2 = 1
+        elif combined_label == 4:
+            label = 1
+            label2 = 1
 
-        sample = {'image': image, 'label': np.array([convert_strings[label]]), 'label2': np.array([convert_strings2[label2]])}
+        #convert_strings = {'Has_fin':0, 'No_fin':1, 'Cannot_see':2}
+        #convert_strings2 = {'No Fungi': 0, 'Slight Fungi':1, 'Severe Fungi':1}
+
+        sample = {'image': image, 'label': np.array(label), 'label2': np.array(label2)}
 
         if self.transform:
             sample = self.transform(sample)
@@ -53,8 +65,25 @@ class ToTensor(object):
         # numpy image: H x W x C
         # torch image: C x H x W
         image = image.transpose((2, 0, 1))
-        label = label.reshape((-1,))
+        #label = label.reshape((-1,))
         return {'image': torch.from_numpy(image),
+                'label': torch.from_numpy(label),
+                'label2':torch.from_numpy(label2)}
+
+class ToNormTensor(object):
+    """Convert ndarrays in sample to Tensors."""
+
+    def __call__(self, sample):
+        image, label, label2 = sample['image'], sample['label'], sample['label2']
+        mm,sd = torch.tensor([0.3429,0.3551,0.3092]),torch.tensor([0.1764,0.1702,0.1767])
+
+        mm,sd = torch.reshape(mm,[3,1,1]),torch.reshape(sd,[3,1,1])
+        # swap color axis because
+        # numpy image: H x W x C
+        # torch image: C x H x W
+        image = image.transpose((2, 0, 1))
+        #label = label.reshape((-1,))
+        return {'image': (torch.from_numpy(image)-mm)/sd,
                 'label': torch.from_numpy(label),
                 'label2':torch.from_numpy(label2)}
 
